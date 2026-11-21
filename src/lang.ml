@@ -14,6 +14,9 @@ type expr =
      | Var of var | Let of var * expr * expr
 
      (* TODO: Add pairs; functions; and recursive functions *)
+     | Pair of expr * expr | First of expr | Second of expr
+     | Fun of var * expr | App of expr * expr
+     | Fix of var * var * expr
 
 
 (*
@@ -21,9 +24,12 @@ type expr =
   in : AST [[e]]
   out : true iff e is a value
 *)
-let is_val e = match e with 
+let is_val e = match e with
      Int _ -> true
    | Bool _ -> true
+   | Pair _ -> true
+   | Fun _ -> true
+   |  Fix _ -> true
    | _ -> false
 
 (*************************)
@@ -43,15 +49,21 @@ let rec subst (x, v, e) : expr =
   | Mult(e1,e2) -> Mult(subst(x,v,e1), subst(x,v,e2))
   | Equal(e1,e2) -> Equal(subst(x,v,e1), subst(x,v,e2))
   | If(e0,e1,e2) -> If(subst(x,v,e0), subst(x,v,e1), subst(x,v,e2))
+  | Pair(e1,e2) -> Pair(subst(x,v,e1), subst(x,v,e2))
+  | First(e) -> First(subst(x,v,e))
+  | Second(e) -> Second(subst(x,v,e))
+  | Fun(y,e) ->  Fun(y, if x = y then e else subst(x,v,e))
+  | Fix(y,z,e) -> Fix(y, z, if x = y && x = z then e else subst(x,v,e))
+  | App(e1,e2) -> App(subst(x,v,e1), subst(x,v,e2))
 
 type step_result = Step of expr | NotReducible
-(* 
+(*
    step : expr -> step_result
    in : An expression [[e]]
    out : An expression [[e']] if e -> e' in the operational semantics;
          if no such [[e']] exists, returns [[NotReducible]]
 *)
-let rec step (e : expr) : step_result = 
+let rec step (e : expr) : step_result =
    match e with
    | Bool _ | Int _ -> NotReducible
    | Not (Bool b) -> Step (Bool (not b))
@@ -118,10 +130,55 @@ let rec step (e : expr) : step_result =
        | NotReducible -> NotReducible
       end
    | Var _ -> NotReducible
-   | Let(x,e1,e2) -> 
+   | Let(x,e1,e2) ->
       begin match step e1 with
       | Step e1' -> Step (Let(x,e1',e2))
       | NotReducible -> if is_val e1 then Step(subst(x,e1,e2)) else NotReducible
+      end
+    | Pair (e1, e2) ->
+      begin match step e1 with
+        | Step e1' -> Step (Pair (e1', e2))
+        | NotReducible ->
+          begin match step e2 with
+            | Step e2' -> Step (Pair (e1, e2'))
+            | NotReducible -> NotReducible
+          end
+      end
+    | First (Pair (e1, e2)) -> Step e1
+    | Second (Pair (e1, e2)) -> Step e2
+    | First e ->
+      begin match step e with
+        | Step e' -> Step (First e')
+        | NotReducible -> NotReducible
+        end
+    | Second e ->
+      begin match step e with
+        | Step e' -> Step (Second e')
+        | NotReducible -> NotReducible
+        end
+    | Fun (x, e) ->
+      begin match step e with
+        | Step e' -> Step (Fun (x, e'))
+        | NotReducible -> NotReducible
+      end
+    | Fix (f, x, e) ->
+      begin match step e with
+        | Step e' -> Step (Fix (f, x, e'))
+        | NotReducible -> NotReducible
+      end
+    | App (e1, e2) ->
+      begin match step e1 with
+        | Step e1' -> Step (App (e1', e2))
+        | NotReducible ->
+          begin match step e2 with
+            | Step e2' -> Step (App (e1, e2'))
+            | NotReducible ->
+              begin match e1 with
+                | Fun (x, e) -> Step (subst(x, e2, e))
+                | Fix (f, x, e) -> Step (subst(f, e1, subst(x, e2, e)))
+                | _ -> NotReducible
+                end
+          end
       end
 
 
@@ -130,7 +187,7 @@ let rec step (e : expr) : step_result =
    in : AST [[e]]
    out : [[e']] such that e ->* e' -/-> in the operational semantics
 *)
-let rec multistep e = match step e with 
+let rec multistep e = match step e with
     | Step e' -> multistep e'
     | NotReducible -> e
 
@@ -142,7 +199,7 @@ let rec multistep e = match step e with
 (* Type checking *)
 (*****************)
 
-type arith_type = INT | BOOL
+type arith_type = INT | BOOL | PAIR of arith_type * arith_type | FUNCTION of arith_type * arith_type
 (* TODO: add pairs and function types *)
 
 (* Define a type to represent finite maps/typing contexts *)
@@ -183,7 +240,7 @@ let rec type_of_expr (g, e) : arith_type option =
     | Some tp -> type_of_expr (extend(g,x,tp), e2)
     end
   | Bool _ -> Some BOOL
-  | And(e1,e2) | Or(e1,e2) -> 
+  | And(e1,e2) | Or(e1,e2) ->
     begin match type_of_expr(g,e1), type_of_expr (g,e2) with
      | Some BOOL, Some BOOL -> Some BOOL
      | _, _ -> None
@@ -194,7 +251,7 @@ let rec type_of_expr (g, e) : arith_type option =
     | _ -> None
     end
   | Int _ -> Some INT
-  | Plus(e1,e2) | Mult(e1,e2) -> 
+  | Plus(e1,e2) | Mult(e1,e2) ->
     begin match type_of_expr (g,e1), type_of_expr (g,e2) with
      | Some INT, Some INT -> Some INT
      | _, _ -> None
@@ -211,8 +268,36 @@ let rec type_of_expr (g, e) : arith_type option =
       else None
     | _, _, _ -> None
     end
-
-
+  | Pair(e1,e2) ->
+    begin match type_of_expr(g,e1), type_of_expr(g,e2) with
+    | Some t1, Some t2 -> Some (PAIR (t1, t2))
+    | _, _ -> None
+    end
+  | First(e) ->
+    begin match type_of_expr(g,e) with
+    | Some (PAIR (t1, t2)) -> Some (t1)
+    | _ -> None
+    end
+  | Second(e) ->
+    begin match type_of_expr(g,e) with
+    | Some (PAIR (t1, t2)) -> Some (t2)
+    | _ -> None
+    end
+  | Fun (x,e) ->
+    begin match type_of_expr(g,Var(x)), type_of_expr(g,e) with
+    | Some t1, Some t2 -> Some (FUNCTION (t1, t2))
+    | _, _ -> None
+    end
+  | Fix (f,x,e) ->
+    begin match type_of_expr(g,Var(f)), type_of_expr(g,Var(x)), type_of_expr(g,e) with
+    | Some (FUNCTION (t1, t2)), Some t1', Some t2' -> if t1 = t1' && t2 = t2' then Some (FUNCTION(t1, t2)) else None
+    | _, _, _ -> None
+    end
+  | App (e1,e2) ->
+    begin match type_of_expr(g,e1), type_of_expr(g,e2) with
+    | Some (FUNCTION (t1, t2)), Some t1' -> if t1 = t1' then Some t2 else None
+    | _, _ -> None
+    end
 
 (********************************************)
 (* Utility functions for working with ARITH *)
@@ -238,16 +323,22 @@ let rec string_of_expr e = match e with
    | Plus (e1, e2) -> "(" ^ (string_of_expr e1) ^ " + " ^ (string_of_expr e2) ^ ")"
    | Mult (e1, e2) -> "(" ^ (string_of_expr e1) ^ " x " ^ (string_of_expr e2) ^ ")"
    | Equal (e1, e2) -> "(" ^ (string_of_expr e1) ^ " = " ^ (string_of_expr e2) ^ ")"
-   | If(e1, e2, e3) -> "If " ^ (string_of_expr e1) ^ 
+   | If(e1, e2, e3) -> "If " ^ (string_of_expr e1) ^
                        " Then " ^ (string_of_expr e2) ^
                        " Else " ^ (string_of_expr e3)
+   | Pair (e1, e2) -> "(" ^ (string_of_expr e1) ^ "," ^ (string_of_expr e2) ^ ")"
+   | First (e) -> "First " ^ (string_of_expr e)
+   | Second (e) -> "Second " ^ (string_of_expr e)
+   | Fun (x, e) -> "Fun " ^ x ^ " → " ^ (string_of_expr e)
+   | Fix (x, y, e) -> "Fix " ^ x ^ "." ^ y ^ " → " ^ (string_of_expr e)
+   | App (e1, e2) -> (string_of_expr e1) ^ " " ^ (string_of_expr e2)
 
 
 (*
   pretty_trace : expr -> bool -> unit
-  in : AST [[e]], stepper flag 
+  in : AST [[e]], stepper flag
   out : ()
-  side effects : Pretty prints execution trace of e. Blocks on keystroke 
+  side effects : Pretty prints execution trace of e. Blocks on keystroke
   between reductions if stepper is on.
 *)
 let rec pretty_trace e stepper =
@@ -261,7 +352,7 @@ let rec pretty_trace e stepper =
   stepper : expr -> ()
   in : AST [[e]]
   out : ()
-  side effects : Pretty prints execution trace of e. Blocks on keystroke 
+  side effects : Pretty prints execution trace of e. Blocks on keystroke
   between reductions.
 *)
 let rec stepper e = pretty_trace e true;;
@@ -269,7 +360,6 @@ let rec stepper e = pretty_trace e true;;
   tracer : expr -> ()
   in : AST [[e]]
   out : ()
-  side effects : Pretty prints execution trace of e. 
+  side effects : Pretty prints execution trace of e.
 *)
 let rec tracer e = pretty_trace e false;;
-

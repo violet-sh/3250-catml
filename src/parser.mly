@@ -16,8 +16,18 @@ open Lang
 %token IF
 %token THEN
 %token ELSE
+%token COMMA
+%token FIRST
+%token SECOND
+%token FUN
+%token FIX
+%token DOT
+%token ARROW
 %token EOF
 
+%nonassoc FUN
+%nonassoc FIX
+%left LET
 %nonassoc IN
 %nonassoc ELSE
 %left EQUALS
@@ -43,4 +53,10 @@ expr:
   | LET; x = ID; EQUALS; e1 = expr; IN; e2 = expr   { Let (x, e1, e2) }
   | IF; e1 = expr; THEN; e2 = expr; ELSE; e3 = expr { If (e1, e2, e3) }
   | LPAREN; e=expr; RPAREN {e}
+  | LPAREN; e1 = expr; COMMA; e2 = expr; RPAREN { Pair (e1, e2) }
+  | FIRST; e = expr { First (e) }
+  | SECOND; e = expr { Second (e) }
+  | FUN; x = ID; ARROW; e = expr { Fun (x, e) }
+  | FIX; f = ID; DOT; x = ID; ARROW; e = expr { Fix (f, x, e) }
+  | e1 = expr; e2 = expr { App (e1, e2) }
   ;

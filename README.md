@@ -75,18 +75,21 @@ In the `examples` directory I have included two sample CatML programs. You shoul
 
 ## How to interact with a CatML program
 
-TODO
+To interact with a CatML program, simply open the utop for this project with `dune utop` and run the `interpret_file` function with the following command:
 
+```ocaml
+CatML.Main.interpret_file("<path to file>");;
+```
 
 # Reflection Questions
 
 1. If you worked as a group, list all the group members.
 
-TODO
+N/A
 
 2. Did you use generative AI to assist you in implementing this project? If so, briefly explain how you used it and for which components.
 
-TODO
+No.
 
 3. Did you make any design decisions that we should know about?
 
@@ -94,7 +97,7 @@ TODO
 
 4. Did you implement any of the extra credit features? Briefly summarize your work.
 
-TODO
+I did not.
 
 5. Any feedback on the structure of this assignment?
 
