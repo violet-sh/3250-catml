@@ -93,7 +93,7 @@ No.
 
 3. Did you make any design decisions that we should know about?
 
-TODO
+I implemented CatML as best as possible.
 
 4. Did you implement any of the extra credit features? Briefly summarize your work.
 
@@ -101,4 +101,8 @@ I did not.
 
 5. Any feedback on the structure of this assignment?
 
-TODO
+The structure was generally good, it was nice to work on a project bringing together all we've learned so far.
+The directions I feel lacked a bit of instruction on how to use certain aspects of OCaml to pake this happen.
+The starter code was very helpful but sometimes provided me with more questions than answers.
+It would be nice to get a bit more detailed instructions on working with the provided code,
+but I get that the whole point of this assignment was to test our ability to do that ourselves.
